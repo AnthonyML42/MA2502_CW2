@@ -49,7 +49,7 @@ po/*~
 rsconnect/
 
 # data folder
-Data/
+Data/*
 
 # vscode stuff
 .vscode/*
