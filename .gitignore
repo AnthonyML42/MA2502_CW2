@@ -48,9 +48,6 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-# data folder
-Data/*
-
 # vscode stuff
 .vscode/*
 !.vscode/settings.json
