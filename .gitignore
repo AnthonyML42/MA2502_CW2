@@ -61,3 +61,6 @@ rsconnect/
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+# checkpoints for notebooks
+.ipynb_checkpoints
