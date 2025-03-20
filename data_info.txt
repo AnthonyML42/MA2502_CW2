@@ -1,0 +1,16 @@
+1. The raw/cleaned NBA data from learning central, along with salaries
+2. https://www.kaggle.com/datasets/eoinamoore/historical-nba-data-and-player-box-scores
+3. https://www.kaggle.com/datasets/sumitrodatta/nba-aba-baa-stats - folder has same name
+4. https://www.kaggle.com/datasets/wyattowalsh/basketball - has sqlite option too. added wyatt to name.
+
+
+1. ---
+
+2. curl -L -o historical-nba-data-and-player-box-scores.zip\
+  https://www.kaggle.com/api/v1/datasets/download/eoinamoore/historical-nba-data-and-player-box-scores
+
+3. curl -L -o nba-aba-baa-stats.zip\
+  https://www.kaggle.com/api/v1/datasets/download/sumitrodatta/nba-aba-baa-stats
+
+4. curl -L -o wyatt_basketball.zip\
+  https://www.kaggle.com/api/v1/datasets/download/wyattowalsh/basketball

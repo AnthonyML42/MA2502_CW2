@@ -64,3 +64,10 @@ rsconnect/
 
 # checkpoints for notebooks
 .ipynb_checkpoints
+
+# don't want any zipped data/csv data files tracked
+.zip
+.csv
+.sqlite
+
+Data/
