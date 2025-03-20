@@ -10,7 +10,9 @@ from pathlib import Path
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
 
-if os.path.basename(os.path.normpath(dname)) != "MA2502_CW2":
+end_path = os.path.basename(os.path.normpath(dname)) 
+
+if end_path != "MA2502_CW2" or end_path != "MA2502_CW2-main": # just in case you download the zip, only imagining we have one branch!
     sys.exit("Running outside of repo - wrong folder")
 
 Path("Data/zips").mkdir(parents=True, exist_ok=True)
