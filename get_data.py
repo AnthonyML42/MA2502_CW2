@@ -43,7 +43,7 @@ for filename, url in files:
     if running_os == "Windows":
         subprocess.run(["powershell", "-Command", f"Expand-Archive -Path {filename} -DestinationPath ../{os.path.splitext(filename)[0]}"])
     elif running_os == "Linux":
-        pass
+        subprocess.run(["unzip", filename, "-d", f"../{os.path.splitext(filename)[0]}"])
     else:
         raise NotImplementedError
     
