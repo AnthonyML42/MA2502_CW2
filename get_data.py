@@ -12,7 +12,9 @@ dname = os.path.dirname(abspath)
 
 end_path = os.path.basename(os.path.normpath(dname)) 
 
-if end_path != "MA2502_CW2" or end_path != "MA2502_CW2-main": # just in case you download the zip, only imagining we have one branch!
+
+
+if "MA2502_CW2" not in end_path: # just in case you download the zip also
     sys.exit("Running outside of repo - wrong folder")
 
 Path("Data/zips").mkdir(parents=True, exist_ok=True)
