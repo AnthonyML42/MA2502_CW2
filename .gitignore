@@ -71,3 +71,6 @@ rsconnect/
 .sqlite
 
 Data/
+
+# database file
+.duckdb
