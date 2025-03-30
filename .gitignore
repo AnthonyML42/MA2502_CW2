@@ -73,4 +73,4 @@ rsconnect/
 Data/
 
 # database file
-.duckdb
+*.duckdb
