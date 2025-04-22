@@ -53,6 +53,12 @@ for filename, url in files:
     
     print(f"Extracted {filename}")
 
+## now get another height dataset from github
+# https://github.com/simonwarchol/NBA-Height-Weight
+
+os.chdir(f"{dname}/Data/")
+
+subprocess.run(["git", "clone", r"https://github.com/simonwarchol/NBA-Height-Weight.git"])
 
 os.chdir(f"{dname}")
 
