@@ -1,0 +1,257 @@
+---
+title: "NBA Analysis"
+#author: "Obi-Wan Kenobi (C1234567) and Luke Skywalker (C2345678)"
+author: |
+        | Obi-Wan Kenobi (C1234567) and Luke Skywalker (C2345678)
+        | More names and student numbers (eventually)
+#email: "StudentA@cardiff.ac.uk"  # optional
+#date: "`r format(Sys.time(), '%d %B %Y')`" #optional
+fontsize: 11pt
+fontfamily: times
+geometry: margin=1in
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    keep_tex: true 
+    citation_package: natbib
+    fig_caption: true
+    highlight: haddock 
+    df_print: kable
+    # toc_depth: 1
+  bookdown::pdf_document2:
+    toc: true
+    number_sections: true
+    keep_tex: true 
+    citation_package: natbib
+    fig_caption: true
+    #toc_depth: 1
+    highlight: haddock 
+    df_print: kable
+    extra_dependencies:
+      caption: ["labelfont={bf}"]
+    #pdf_document:
+    #  extra_dependencies: ["flafter"]
+    #pdf_document2:
+    #  extra_dependencies: ["float"]
+#bibliography: [refs.bib] 
+#biblio-style: apalike
+#link-citations: yes
+abstract: Write your abstract here. 
+---
+
+<!-- set knitr options here -->
+
+```{r setup, include=FALSE}
+library(knitr)
+library(kableExtra)
+## Do not include warning messages in the report 
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+<!-- the report starts here
+In the first R cell below, you should load all the packages and data sets used to generate the report. 
+-->
+
+```{r, include=FALSE}
+## Packages
+library(tidyverse)
+library(pROC)
+library(matrixStats)
+library(glmnet)
+library(broom)
+library(glue)
+
+## Data
+player_info <- read_csv("Data/Player_Info.csv")
+player_salary <- read_csv("Data/Player_Salary.csv")
+player_info <- player_info %>% mutate(PLAYER_NAME = paste(First_Name, Surname))
+player_salary <- player_salary %>% rename(PLAYER_NAME = Name)
+clean_shots <- read_csv("Data/NBA_Shots_Clean_Example.csv")
+common_player_info <- read_csv("Data/wyatt_basketball/csv/common_player_info.csv")
+common_player_info <- common_player_info %>% mutate(PLAYER_NAME = paste(first_name, last_name))
+height_2014 <- read_csv("Data/NBA-Height-Weight/CSVs/Yearly/2014.csv") #https://github.com/simonwarchol/NBA-Height-Weight
+height_2014 <- height_2014 %>% rename(PLAYER_NAME = Name)
+```
+
+```{r, include=FALSE}
+# Data cleaning for consistency across datasets
+
+typos <- list(
+    "Time Hardaway Jr" = "Tim Hardaway Jr",
+    "Steve Adams" = "Steven Adams",
+    "Jose Juan Barea" = "Jj Barea",
+    "Glen Rice Jr" = "Glen Rice",
+    "Charles Hayes" = "Chuck Hayes", # technically correct but more sources with chuck
+    "Ishmael Smith" = "Ish Smith", # as above
+    "Patrick Mills" = "Patty Mills", # etc
+    "Na Nene" = "Nene"
+)
+
+replace_strings <- function(df, replacements) {
+  df %>%
+    mutate(across(where(is.character), ~{
+      for (pattern in names(replacements)) {
+        . <- str_replace_all(., pattern, replacements[[pattern]])
+      }
+      .
+    }))
+}
+
+
+# Trying to standardise naming, works in almost every case!
+clean_name <- function(name) {
+  name %>%
+    str_replace_all("-", " ") %>%
+    str_replace_all("'", "") %>%
+    str_remove_all("\\.") %>%
+    str_to_title()
+}
+
+player_info <- player_info %>%
+    mutate(PLAYER_NAME = clean_name(PLAYER_NAME))
+
+clean_shots <- clean_shots %>%
+    mutate(PLAYER_NAME = clean_name(PLAYER_NAME),
+          CLOSEST_DEFENDER = clean_name(CLOSEST_DEFENDER))
+
+# shortcut using slug col
+common_player_info <- common_player_info %>%
+    mutate(PLAYER_NAME = player_slug) %>%
+    mutate(PLAYER_NAME = str_replace_all(PLAYER_NAME, "-", " ")) %>%
+    mutate(PLAYER_NAME = str_to_title(PLAYER_NAME))
+
+height_2014 <- height_2014 %>%
+    mutate(PLAYER_NAME = clean_name(PLAYER_NAME))
+
+clean_shots <- replace_strings(clean_shots, typos)
+player_info <- replace_strings(player_info, typos)
+common_player_info <- replace_strings(common_player_info, typos)
+height_2014 <- replace_strings(height_2014, typos)
+
+# Explicit case because of his name and interactions with the regex
+player_info <- player_info %>% mutate(across(where(is.character), ~ str_replace_all(., "Luc Mbah", "Luc Mbah A Moute")))
+
+# More explicit cases
+height_2014 <- height_2014 %>% mutate(across(where(is.character), ~ str_replace_all(., "Jose Barea", "Jj Barea")))
+
+# In common_player_info there is a duplicate row for glen rice, and the younger is not called jr... So by hand,
+
+common_player_info <- common_player_info %>% filter(person_id != 779)
+
+```
+
+
+# Introduction {#sec:Intro}
+
+Lorem ipsum dolor sit amet. In rerum labore et quasi nobis est error quia eos numquam quod aut quaerat officia vel accusamus perspiciatis et labore quas. In atque delectus qui illo aliquid ut labore perferendis! 
+
+# First content section {#sec:Sec1}
+
+In this section we investigate the relationship between variables in the dataset and shot success. Fitting logistic models to the data allows us to see the weightings of each predictor, check if their effect is significant and compare how they affect the log-odds of shot success. We will fit the first models on a training subset of the data, and then evaluate their predictive performance on a testing subset. Rather than strictly to analyse predictive performance, these metrics will show that shot success cannot fully be explained by the data we have - there are many more factors and basketball is a complex game!
+
+## First content subsection {#sec::Subsec1.1}
+
+First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors `SHOT_DIST,CLOSE_DEF_DIST,TOUCH_TIME,SHOOTER_HEIGHT_ADV,PERIOD,SHOT_CLOCK,DRIBBLES` on the training dataset.
+
+```{r, include=FALSE}
+# Heights like 6-4 are very annoying, convert them to cm here!
+
+convert_to_cm <- function(feet_inches) {
+  split_height <- strsplit(feet_inches, "-")
+  
+  feet <- sapply(split_height, function(x) as.numeric(x[1]))
+  inches <- sapply(split_height, function(x) as.numeric(x[2]))
+  
+  cm_height <- (feet * 30.48) + (inches * 2.54)
+  
+  return(cm_height)
+}
+convert_to_cm <- Vectorize(convert_to_cm)
+```
+
+```{r, include=FALSE}
+
+predictors <- c("GAME_ID", "PLAYER_NAME", "CLOSEST_DEFENDER" ,"SHOT_DIST", "PTS_TYPE",
+                "CLOSE_DEF_DIST", "SHOT_CLOCK", "TOUCH_TIME", "PERIOD", "DRIBBLES",
+                "SUCCESS")
+
+distinct_players_and_defenders <- union(
+    clean_shots %>% distinct(PLAYER_NAME),
+    clean_shots %>% distinct(CLOSEST_DEFENDER) %>% rename(PLAYER_NAME = CLOSEST_DEFENDER)
+)
+
+player_height_pos <- distinct_players_and_defenders %>%
+    left_join(player_info %>% select(PLAYER_NAME, Height, Pos), by="PLAYER_NAME") %>%
+    rename(H1 = Height)
+
+player_height_pos <- player_height_pos %>%
+    left_join(common_player_info %>% select(PLAYER_NAME, height, position), by="PLAYER_NAME", relationship = "many-to-many") %>%
+    rename(H2 = height)
+   
+player_height_pos <- player_height_pos %>%
+    left_join(height_2014 %>% select(PLAYER_NAME, "Height(Feet-Inches)"), by="PLAYER_NAME") %>%
+    rename(H3 = "Height(Feet-Inches)")
+
+# here is the opportunity for the NA height analysis!
+
+player_height_pos <- player_height_pos %>%
+    mutate(
+    H2 = ifelse(!is.na(H2), convert_to_cm(H2), NA),
+    H3 = ifelse(!is.na(H3), convert_to_cm(H3), NA),
+    HEIGHT = case_when(
+        !is.na(H1) ~ H1,
+        is.na(H1) ~ rowMeans2(cbind(H2, H3), na.rm = TRUE),
+        TRUE ~ NA_real_
+    ))
+
+# Finally join the "more complete" height data onto the shot data.
+# Double join to get the defenders height data too - trick with renaming columns.
+# After we have a complete model dataset here, we can split it up and only then we can convert to factors.
+
+model_data_clean <- clean_shots %>% 
+    select(all_of(predictors)) %>%
+    left_join(player_height_pos %>% select(PLAYER_NAME, HEIGHT), by="PLAYER_NAME", relationship = "many-to-many") %>%
+    rename(SHOOTER_HEIGHT = HEIGHT) %>%
+    left_join(player_height_pos %>% select(PLAYER_NAME, HEIGHT) %>% rename(CLOSEST_DEFENDER = PLAYER_NAME), 
+        by="CLOSEST_DEFENDER", relationship = "many-to-many") %>%
+    rename(DEFENDER_HEIGHT = HEIGHT) %>%
+    mutate(SHOOTER_HEIGHT_ADV = SHOOTER_HEIGHT - DEFENDER_HEIGHT) %>%
+    filter(PERIOD <= 4)
+
+# another chance for missing players
+
+model_data_clean <- na.omit(model_data_clean)
+
+# make test and train split (for initial models only)
+
+model_data <- model_data_clean %>%
+    mutate(across(c("GAME_ID", "PLAYER_NAME", "CLOSEST_DEFENDER", "PERIOD", "SUCCESS", "PTS_TYPE"), as.factor))
+    
+model_data_scaled <- model_data %>% mutate(across(where(is.numeric), scale))
+
+set.seed(0)
+
+# Base r approach for model test/train split. Avoids using caret
+train_indices <- sample(1:nrow(model_data), size = 0.75 * nrow(model_data))
+train_data <- model_data_scaled[train_indices, ]
+test_data <- model_data_scaled[-train_indices, ]
+```
+
+```{r, include=FALSE}
+log_model <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES,  
+                 data=train_data, family=binomial(link="logit"))
+```
+
+```{r, include=TRUE}
+summary(log_model)
+```
+
+(Note that `PERIOD1` is not present in the coefficient summary since R considers the first factor in categorical data as a base, and then compares the others to it.)
+
+From the coefficients table we can see weights (Estimate column) and whether the effect is significant or not (Pr(>|z|) column). In this model the period is not a significant predictor of shot success. On the other hand, shot distance is the largest predictor for decreasing shot success and the weight (-0.55) is somewhat larger than that of the other predictors.
+
+One conclusion which is initially confusing is the positive weight of `CLOSE_DEF_DIST`, seemingly implying that a defender being closer makes a successful shot more likely. However when defenders are closest is usually when a layup is made near the net, which isn't necessarily harder than a wide-open 3 pointer. We will try to address this by splitting the models up by shot type later.
+
+The remaining predictors have expected weight signs. The weight for `SHOOTER_HEIGHT_ADV` being positive but small tells us being taller than the nearest defender increases the likelihood of a successful shot. Similarly the longer the ball is held by the shooter (`TOUCH_TIME`), the lower the likelihood also.
