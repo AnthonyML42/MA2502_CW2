@@ -54,9 +54,10 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 In the first R cell below, you should load all the packages and data sets used to generate the report. 
 -->
 
-```{r, include=FALSE}
+```{r libraries and data import, include=FALSE}
 ## Packages
 library(tidyverse)
+library(stringi)
 library(pROC)
 library(matrixStats)
 library(glmnet)
@@ -75,10 +76,10 @@ height_2014 <- read_csv("Data/NBA-Height-Weight/CSVs/Yearly/2014.csv") #https://
 height_2014 <- height_2014 %>% rename(PLAYER_NAME = Name)
 ```
 
-```{r, include=FALSE}
+```{r data name cleaning, include=FALSE}
 # Data cleaning for consistency across datasets
 
-typos <- list(
+typos <- c(
     "Time Hardaway Jr" = "Tim Hardaway Jr",
     "Steve Adams" = "Steven Adams",
     "Jose Juan Barea" = "Jj Barea",
@@ -86,27 +87,28 @@ typos <- list(
     "Charles Hayes" = "Chuck Hayes", # technically correct but more sources with chuck
     "Ishmael Smith" = "Ish Smith", # as above
     "Patrick Mills" = "Patty Mills", # etc
-    "Na Nene" = "Nene"
+    "Na Nene" = "Nene",
+    "Jose Barea" = "Jj Barea"
 )
 
-replace_strings <- function(df, replacements) {
-  df %>%
-    mutate(across(where(is.character), ~{
-      for (pattern in names(replacements)) {
-        . <- str_replace_all(., pattern, replacements[[pattern]])
-      }
-      .
-    }))
+# trying stuff to make this function a bit quicker
+replace_strings <- function(df, replacements, cols = "PLAYER_NAME") {
+    patterns <- names(replacements)
+    replacement_values <- unname(replacements)
+
+    df %>% mutate(
+        across(all_of(cols), ~ stri_replace_all_fixed(., patterns, replacement_values, vectorize_all = FALSE))
+    )
 }
 
 
 # Trying to standardise naming, works in almost every case!
 clean_name <- function(name) {
-  name %>%
-    str_replace_all("-", " ") %>%
-    str_replace_all("'", "") %>%
-    str_remove_all("\\.") %>%
-    str_to_title()
+    name %>%
+        stri_replace_all_fixed("-", " ") %>%
+        stri_replace_all_fixed("'", "") %>%
+        stri_replace_all_fixed(".", "", vectorize_all = FALSE) %>%
+        str_to_title()
 }
 
 player_info <- player_info %>%
@@ -116,29 +118,20 @@ clean_shots <- clean_shots %>%
     mutate(PLAYER_NAME = clean_name(PLAYER_NAME),
           CLOSEST_DEFENDER = clean_name(CLOSEST_DEFENDER))
 
-# shortcut using slug col
 common_player_info <- common_player_info %>%
-    mutate(PLAYER_NAME = player_slug) %>%
-    mutate(PLAYER_NAME = str_replace_all(PLAYER_NAME, "-", " ")) %>%
-    mutate(PLAYER_NAME = str_to_title(PLAYER_NAME))
+    mutate(PLAYER_NAME = clean_name(PLAYER_NAME)) %>%
+    filter(person_id != 779) # filtering out glen rice sr. by hand
 
 height_2014 <- height_2014 %>%
     mutate(PLAYER_NAME = clean_name(PLAYER_NAME))
 
-clean_shots <- replace_strings(clean_shots, typos)
+clean_shots <- replace_strings(clean_shots, typos, c("PLAYER_NAME", "CLOSEST_DEFENDER"))
 player_info <- replace_strings(player_info, typos)
 common_player_info <- replace_strings(common_player_info, typos)
 height_2014 <- replace_strings(height_2014, typos)
 
 # Explicit case because of his name and interactions with the regex
 player_info <- player_info %>% mutate(across(where(is.character), ~ str_replace_all(., "Luc Mbah", "Luc Mbah A Moute")))
-
-# More explicit cases
-height_2014 <- height_2014 %>% mutate(across(where(is.character), ~ str_replace_all(., "Jose Barea", "Jj Barea")))
-
-# In common_player_info there is a duplicate row for glen rice, and the younger is not called jr... So by hand,
-
-common_player_info <- common_player_info %>% filter(person_id != 779)
 
 ```
 
@@ -151,11 +144,11 @@ Lorem ipsum dolor sit amet. In rerum labore et quasi nobis est error quia eos nu
 
 In this section we investigate the relationship between variables in the dataset and shot success. Fitting logistic models to the data allows us to see the weightings of each predictor, check if their effect is significant and compare how they affect the log-odds of shot success. We will fit the first models on a training subset of the data, and then evaluate their predictive performance on a testing subset. Rather than strictly to analyse predictive performance, these metrics will show that shot success cannot fully be explained by the data we have - there are many more factors and basketball is a complex game!
 
-## First content subsection {#sec::Subsec1.1}
+## First subsection {#sec::Subsec1.1}
 
 First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors `SHOT_DIST,CLOSE_DEF_DIST,TOUCH_TIME,SHOOTER_HEIGHT_ADV,PERIOD,SHOT_CLOCK,DRIBBLES` on the training dataset.
 
-```{r, include=FALSE}
+```{r height conversion function, include=FALSE}
 # Heights like 6-4 are very annoying, convert them to cm here!
 
 convert_to_cm <- function(feet_inches) {
@@ -171,11 +164,10 @@ convert_to_cm <- function(feet_inches) {
 convert_to_cm <- Vectorize(convert_to_cm)
 ```
 
-```{r, include=FALSE}
+```{r height data joining and model data splitting, include=FALSE}
 
 predictors <- c("GAME_ID", "PLAYER_NAME", "CLOSEST_DEFENDER" ,"SHOT_DIST", "PTS_TYPE",
-                "CLOSE_DEF_DIST", "SHOT_CLOCK", "TOUCH_TIME", "PERIOD", "DRIBBLES",
-                "SUCCESS")
+                "CLOSE_DEF_DIST", "SHOT_CLOCK", "TOUCH_TIME", "PERIOD", "DRIBBLES", "LOCATION", "SUCCESS")
 
 distinct_players_and_defenders <- union(
     clean_shots %>% distinct(PLAYER_NAME),
@@ -239,19 +231,60 @@ train_data <- model_data_scaled[train_indices, ]
 test_data <- model_data_scaled[-train_indices, ]
 ```
 
-```{r, include=FALSE}
+```{r fitting naive log model, include=FALSE}
 log_model <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES,  
                  data=train_data, family=binomial(link="logit"))
 ```
 
-```{r, include=TRUE}
+```{r log model summary, include=TRUE}
 summary(log_model)
 ```
 
-(Note that `PERIOD1` is not present in the coefficient summary since R considers the first factor in categorical data as a base, and then compares the others to it.)
+(Note that `PERIOD1` and some other variables are not present in the coefficient summary. This is because R considers the first factor in categorical data as a base, and then compares the others to it.)
 
 From the coefficients table we can see weights (Estimate column) and whether the effect is significant or not (Pr(>|z|) column). In this model the period is not a significant predictor of shot success. On the other hand, shot distance is the largest predictor for decreasing shot success and the weight (-0.55) is somewhat larger than that of the other predictors.
 
 One conclusion which is initially confusing is the positive weight of `CLOSE_DEF_DIST`, seemingly implying that a defender being closer makes a successful shot more likely. However when defenders are closest is usually when a layup is made near the net, which isn't necessarily harder than a wide-open 3 pointer. We will try to address this by splitting the models up by shot type later.
 
 The remaining predictors have expected weight signs. The weight for `SHOOTER_HEIGHT_ADV` being positive but small tells us being taller than the nearest defender increases the likelihood of a successful shot. Similarly the longer the ball is held by the shooter (`TOUCH_TIME`), the lower the likelihood also.
+
+Looking at the dataset columns and the predictors, we decided to exclude `PTS_TYPE` and `LOCATION` (home or away) because subsequent analysis will be dedicated to these factors.
+
+## Second subsection {#sec::Subsec1.2}
+
+Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation to the logistic models, which can shrink the coefficients of less powerful predictors to zero.
+
+```{r log lasso model fitting and roc, include=FALSE}
+x_train <- model.matrix(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + 
+                        SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES + PTS_TYPE + LOCATION, data = train_data)[, -1]
+y_train <- train_data$SUCCESS
+
+x_test <- model.matrix(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + 
+                        SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES + PTS_TYPE + LOCATION, data = test_data)[, -1]
+y_test <- test_data$SUCCESS
+lambda_opt <- 0.01828452 # hardcoded 10x CV lambda.1se precomputed (long compile times)
+
+log_lasso_model <- glmnet(x_train, y_train, family = "binomial", alpha=1, lambda=lambda_opt, standardize=FALSE) 
+
+pred_probs <- predict(log_lasso_model, newx = x_test, type = "response", s = lambda_opt)
+roc_obj <- roc(y_test, as.vector(pred_probs))
+ci_auc <- round(ci.auc(roc_obj), 3)
+auc_ci_result <- glue("{round(auc(roc_obj), 3)} [{ci_auc[1]}-{ci_auc[3]}]")
+```
+
+<div style="display: flex;">
+
+<div style="flex: 1; padding-right: 20px;">
+
+```{r lasso model summary, include=TRUE}
+# Model coefficients
+log_lasso_model$beta
+```
+
+</div> <div style="flex: 1; padding-left: 20px;">
+```{r lasso model auroc, include=TRUE}
+# AUROC of the log lasso model
+auc_ci_result
+```
+</div>
+
