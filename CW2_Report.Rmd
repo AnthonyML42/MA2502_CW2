@@ -146,7 +146,7 @@ In this section we investigate the relationship between variables in the dataset
 
 ## First subsection {#sec::Subsec1.1}
 
-First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors `SHOT_DIST,CLOSE_DEF_DIST,TOUCH_TIME,SHOOTER_HEIGHT_ADV,PERIOD,SHOT_CLOCK,DRIBBLES` on the training dataset.
+First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors `SHOT_DIST,CLOSE_DEF_DIST,TOUCH_TIME,SHOOTER_HEIGHT_ADV,PERIOD,SHOT_CLOCK,DRIBBLES` on the training dataset. Below is the model summary which includes coefficient weights: 
 
 ```{r height conversion function, include=FALSE}
 # Heights like 6-4 are very annoying, convert them to cm here!
@@ -231,18 +231,15 @@ train_data <- model_data_scaled[train_indices, ]
 test_data <- model_data_scaled[-train_indices, ]
 ```
 
-```{r fitting naive log model, include=FALSE}
+```{r naive log model fit and summary, include=TRUE, echo=FALSE}
 log_model <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES,  
                  data=train_data, family=binomial(link="logit"))
-```
-
-```{r log model summary, include=TRUE}
 summary(log_model)
 ```
 
 (Note that `PERIOD1` and some other variables are not present in the coefficient summary. This is because R considers the first factor in categorical data as a base, and then compares the others to it.)
 
-From the coefficients table we can see weights (Estimate column) and whether the effect is significant or not (Pr(>|z|) column). In this model the period is not a significant predictor of shot success. On the other hand, shot distance is the largest predictor for decreasing shot success and the weight (-0.55) is somewhat larger than that of the other predictors.
+From the coefficients table we can see weights (Estimate column) and whether the effect is significant or not (`Pr(>|z|)` column). In this model the period is not a significant predictor of shot success. On the other hand, shot distance is the largest predictor for decreasing shot success and the weight ($-0.55$) is somewhat larger than that of the other predictors.
 
 One conclusion which is initially confusing is the positive weight of `CLOSE_DEF_DIST`, seemingly implying that a defender being closer makes a successful shot more likely. However when defenders are closest is usually when a layup is made near the net, which isn't necessarily harder than a wide-open 3 pointer. We will try to address this by splitting the models up by shot type later.
 
@@ -250,9 +247,11 @@ The remaining predictors have expected weight signs. The weight for `SHOOTER_HEI
 
 Looking at the dataset columns and the predictors, we decided to exclude `PTS_TYPE` and `LOCATION` (home or away) because subsequent analysis will be dedicated to these factors.
 
-## Second subsection {#sec::Subsec1.2}
+## Second subsection {#sec::Subsec2.2}
 
-Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation to the logistic models, which can shrink the coefficients of less powerful predictors to zero.
+Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation (specifically the penalty term $\lambda\sum_{i=1}^n{|\beta_{i}|}$) to regression models, which can shrink the coefficients of less powerful predictors to zero - hence the name lasso regression.
+
+TODO: EXPLAIN AUROC USE AND LINK BACK TO EDA
 
 ```{r log lasso model fitting and roc, include=FALSE}
 x_train <- model.matrix(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + 
@@ -272,19 +271,87 @@ ci_auc <- round(ci.auc(roc_obj), 3)
 auc_ci_result <- glue("{round(auc(roc_obj), 3)} [{ci_auc[1]}-{ci_auc[3]}]")
 ```
 
-<div style="display: flex;">
-
-<div style="flex: 1; padding-right: 20px;">
-
 ```{r lasso model summary, include=TRUE}
 # Model coefficients
 log_lasso_model$beta
 ```
 
-</div> <div style="flex: 1; padding-left: 20px;">
 ```{r lasso model auroc, include=TRUE}
-# AUROC of the log lasso model
+# AUROC of the log lasso model and CI
 auc_ci_result
 ```
-</div>
 
+From this we see the most powerful negative predictors of shot success are `SHOT_DIST` and `TOUCH_TIME`, and the most powerful positive predictors are `SHOT_CLOCK` and `CLOSE_DEF_DIST`.
+
+
+## Third subsection {#sec::Subsec2.3}
+
+TODO: EXPLANATION HERE, BETTER PLOT TITLE AND DECIDE ON CAPTION ETC
+
+```{r data setup for split shot models, include=FALSE}
+superstars = c("Steph Curry", "Anthony Davis", "Lebron James", "James Harden", "Russel Westbrook", "Kyrie Irving",
+              "Demarcus Cousins", "Klay Thompson", "Dwayne Wade", "Damian Lillard") # This is arbitrary, so this is just a few good players.
+
+model_data_2pt <- model_data_scaled %>% filter(PTS_TYPE == 2 & !PLAYER_NAME %in% superstars)
+model_data_3pt <- model_data_scaled %>% filter(PTS_TYPE == 3 & !PLAYER_NAME %in% superstars)
+model_data_super <- model_data_scaled %>% filter(PLAYER_NAME %in% superstars)
+model_data_super_2pt <- model_data_super %>% filter(PTS_TYPE == 2)
+model_data_super_3pt <- model_data_super %>% filter(PTS_TYPE == 3)
+
+# Repetitive but only to make sure the models are correct. A more concise syntax can be used if I filtered the data to only have the predictor cols.
+
+log_model_2pt <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV  + DRIBBLES + SHOT_CLOCK, 
+                     data = model_data_2pt, family = binomial(link = "logit"))
+log_model_3pt <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + DRIBBLES + SHOT_CLOCK, 
+                     data = model_data_3pt, family = binomial(link = "logit"))
+log_model_super_2pt <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + DRIBBLES + SHOT_CLOCK, 
+                     data = model_data_super_2pt, family = binomial(link = "logit"))
+log_model_super_3pt <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + DRIBBLES + SHOT_CLOCK, 
+                     data = model_data_super_3pt, family = binomial(link = "logit"))
+
+```
+
+```{r split model dot and whisker diagram, include=TRUE}
+#| echo=FALSE,
+#| fig.width=12, 
+#| fig.height=6
+coefs_plot <- bind_rows(
+    tidy(log_model_2pt)   %>% mutate(model = glue("2PT, n={nrow(model_data_2pt)}")),
+    tidy(log_model_3pt)   %>% mutate(model = glue("3PT, n={nrow(model_data_3pt)}")),
+    tidy(log_model_super_2pt) %>% mutate(model = glue("Superstar 2PT, n={nrow(model_data_super_2pt)}")),
+    tidy(log_model_super_3pt) %>% mutate(model = glue("Superstar 3PT, n={nrow(model_data_super_3pt)}")),
+  ) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    # Wald CI here, 1.96 is a normal dist value.
+    lower = estimate - 1.96 * std.error,
+    upper = estimate + 1.96 * std.error,
+    sig   = p.value <= 0.05
+  )
+ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 height = 0.2,
+                 linewidth = 0.5,
+                 position = position_dodge(width = 0.7)) +
+  geom_point(position = position_dodge(width = 0.7), size = 2) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_shape_manual(
+    values = c(`FALSE` = 1, `TRUE` = 16),
+    labels = c(`FALSE` = "Not significant", `TRUE` = "Significant")
+  ) +
+  labs(
+    title  = "Model Coefficients",
+    x      = "Coefficient estimate",
+    y      = NULL,
+    colour = "Model",
+    shape  = "Significance"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    legend.position    = "bottom"
+  ) +
+     guides(color = guide_legend(nrow = 2))
+
+```
