@@ -10,7 +10,7 @@ fontsize: 11pt
 fontfamily: times
 geometry: margin=1in
 output:
-  html_document:
+  bookdown::html_document2:
     toc: true
     number_sections: true
     keep_tex: true 
@@ -234,7 +234,7 @@ test_data <- model_data_scaled[-train_indices, ]
 ```{r naive log model fit and summary, include=TRUE, echo=FALSE}
 log_model <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES,  
                  data=train_data, family=binomial(link="logit"))
-summary(log_model)
+tidy(log_model)
 ```
 
 (Note that `PERIOD1` and some other variables are not present in the coefficient summary. This is because R considers the first factor in categorical data as a base, and then compares the others to it.)
@@ -271,7 +271,7 @@ ci_auc <- round(ci.auc(roc_obj), 3)
 auc_ci_result <- glue("{round(auc(roc_obj), 3)} [{ci_auc[1]}-{ci_auc[3]}]")
 ```
 
-```{r lasso model summary, include=TRUE}
+```{r lasso model summary, include=TRUE, echo=FALSE, fig.cap="AAAAAAAAAAAAAAAAAAA"}
 # Model coefficients
 log_lasso_model$beta
 ```
@@ -279,6 +279,16 @@ log_lasso_model$beta
 ```{r lasso model auroc, include=TRUE}
 # AUROC of the log lasso model and CI
 auc_ci_result
+pROC_obj <- roc(y_test, as.vector(pred_probs),
+            smoothed = TRUE,
+            # arguments for ci
+            ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+            # arguments for plot
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+sens.ci <- ci.se(pROC_obj)
+plot(sens.ci, type="shape", col="lightblue")
+plot(sens.ci, type="bars")
 ```
 
 From this we see the most powerful negative predictors of shot success are `SHOT_DIST` and `TOUCH_TIME`, and the most powerful positive predictors are `SHOT_CLOCK` and `CLOSE_DEF_DIST`.
@@ -311,7 +321,13 @@ log_model_super_3pt <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + S
 
 ```
 
-```{r split model dot and whisker diagram, include=TRUE}
+<style>
+p.caption {
+  font-size: 0.8em;
+}
+</style>
+
+```{r split-model-dot-whisker-plot, include=TRUE, fig.cap="THIS IS A BOOKDOWN CAPTION"}
 #| echo=FALSE,
 #| fig.width=12, 
 #| fig.height=6
@@ -345,13 +361,17 @@ ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
     x      = "Coefficient estimate",
     y      = NULL,
     colour = "Model",
-    shape  = "Significance"
+    shape  = "Significance",
+    caption = "THIS IS A CENTRED GGPLOT2 CAPTION"
+    
   ) +
-  theme_minimal(base_size = 11) +
+  theme_light(base_size = 11) +
   theme(
     panel.grid.major.y = element_blank(),
-    legend.position    = "bottom"
+    legend.position    = "bottom",
+    plot.caption = element_text(hjust = 0.5, face = "italic", size = 9)
   ) +
      guides(color = guide_legend(nrow = 2))
 
 ```
+More text below
