@@ -1,43 +1,35 @@
 ---
 title: "NBA Analysis"
-#author: "Obi-Wan Kenobi (C1234567) and Luke Skywalker (C2345678)"
-author: |
-        | Obi-Wan Kenobi (C1234567) and Luke Skywalker (C2345678)
-        | More names and student numbers (eventually)
-#email: "StudentA@cardiff.ac.uk"  # optional
-#date: "`r format(Sys.time(), '%d %B %Y')`" #optional
+author: "| Obi-Wan Kenobi (C1234567) and Luke Skywalker (C2345678)\n| More names and
+  student numbers (eventually)\n"
 fontsize: 11pt
-fontfamily: times
-geometry: margin=1in
 output:
-  bookdown::html_document2:
-    toc: true
-    number_sections: true
-    keep_tex: true 
-    citation_package: natbib
-    fig_caption: true
-    highlight: haddock 
-    df_print: kable
-    # toc_depth: 1
   bookdown::pdf_document2:
     toc: true
     number_sections: true
-    keep_tex: true 
+    keep_tex: true
     citation_package: natbib
     fig_caption: true
-    #toc_depth: 1
-    highlight: haddock 
+    highlight: haddock
     df_print: kable
     extra_dependencies:
-      caption: ["labelfont={bf}"]
-    #pdf_document:
-    #  extra_dependencies: ["flafter"]
-    #pdf_document2:
-    #  extra_dependencies: ["float"]
-#bibliography: [refs.bib] 
-#biblio-style: apalike
-#link-citations: yes
-abstract: Write your abstract here. 
+      caption: labelfont={bf}
+  bookdown::html_document2:
+    toc: true
+    number_sections: true
+    keep_tex: true
+    citation_package: natbib
+    fig_caption: true
+    highlight: haddock
+    df_print: kable
+  html_document:
+    toc: true
+    df_print: paged
+  pdf_document:
+    toc: true
+geometry: margin=1in
+fontfamily: times
+abstract: Write your abstract here.
 ---
 
 <!-- set knitr options here -->
@@ -63,6 +55,8 @@ library(matrixStats)
 library(glmnet)
 library(broom)
 library(glue)
+#library(stargazer)
+library(texreg)
 
 ## Data
 player_info <- read_csv("Data/Player_Info.csv")
@@ -140,13 +134,13 @@ player_info <- player_info %>% mutate(across(where(is.character), ~ str_replace_
 
 Lorem ipsum dolor sit amet. In rerum labore et quasi nobis est error quia eos numquam quod aut quaerat officia vel accusamus perspiciatis et labore quas. In atque delectus qui illo aliquid ut labore perferendis! 
 
-# First content section {#sec:Sec1}
+# Predictors of shot success {#sec:Sec1}
 
 In this section we investigate the relationship between variables in the dataset and shot success. Fitting logistic models to the data allows us to see the weightings of each predictor, check if their effect is significant and compare how they affect the log-odds of shot success. We will fit the first models on a training subset of the data, and then evaluate their predictive performance on a testing subset. Rather than strictly to analyse predictive performance, these metrics will show that shot success cannot fully be explained by the data we have - there are many more factors and basketball is a complex game!
 
-## First subsection {#sec::Subsec1.1}
+## Naive logistic regression {#sec::Subsec1.1}
 
-First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors `SHOT_DIST,CLOSE_DEF_DIST,TOUCH_TIME,SHOOTER_HEIGHT_ADV,PERIOD,SHOT_CLOCK,DRIBBLES` on the training dataset. Below is the model summary which includes coefficient weights: 
+First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors listed in the call section below, along with a summary of the coefficient weights:
 
 ```{r height conversion function, include=FALSE}
 # Heights like 6-4 are very annoying, convert them to cm here!
@@ -234,7 +228,8 @@ test_data <- model_data_scaled[-train_indices, ]
 ```{r naive log model fit and summary, include=TRUE, echo=FALSE}
 log_model <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES,  
                  data=train_data, family=binomial(link="logit"))
-tidy(log_model)
+
+summary(log_model)
 ```
 
 (Note that `PERIOD1` and some other variables are not present in the coefficient summary. This is because R considers the first factor in categorical data as a base, and then compares the others to it.)
@@ -247,11 +242,9 @@ The remaining predictors have expected weight signs. The weight for `SHOOTER_HEI
 
 Looking at the dataset columns and the predictors, we decided to exclude `PTS_TYPE` and `LOCATION` (home or away) because subsequent analysis will be dedicated to these factors.
 
-## Second subsection {#sec::Subsec2.2}
+## Regularised logistic regression {#sec::Subsec2.2}
 
-Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation (specifically the penalty term $\lambda\sum_{i=1}^n{|\beta_{i}|}$) to regression models, which can shrink the coefficients of less powerful predictors to zero - hence the name lasso regression.
-
-TODO: EXPLAIN AUROC USE AND LINK BACK TO EDA
+Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation (specifically the penalty term $\lambda\sum_{i=1}^n{|\beta_{i}|}$) to regression models, which can shrink the coefficients of less powerful predictors to zero - hence the name lasso regression. For this model we have computed the **AUROC** (Area Under Receiver Operating Characteristic curve) which is a measure of how accurately the model can predict a successful shot. This metric is useful because a random classifier has an AUROC of $0.5$ which serves as a baseline. We see our AUROC is only $\approx0.6$, so only slightly better than random predictions! This low value further suggests that the data we have cannot explain the whole story behind shot success, there are so many more factors at play. We include the full ROC curve in the appendix also (link).
 
 ```{r log lasso model fitting and roc, include=FALSE}
 x_train <- model.matrix(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + 
@@ -279,34 +272,54 @@ log_lasso_model$beta
 ```{r lasso model auroc, include=TRUE}
 # AUROC of the log lasso model and CI
 auc_ci_result
-pROC_obj <- roc(y_test, as.vector(pred_probs),
-            smoothed = TRUE,
-            # arguments for ci
-            ci=TRUE, ci.alpha=0.9, stratified=FALSE,
-            # arguments for plot
-            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
-            print.auc=TRUE, show.thres=TRUE)
-sens.ci <- ci.se(pROC_obj)
-plot(sens.ci, type="shape", col="lightblue")
-plot(sens.ci, type="bars")
+```
+
+(SEND ROC CURVE TO APPENDIX)
+
+```{r roc-curve-appendix, include=TRUE, echo=FALSE}
+roc(y_test, as.vector(pred_probs),
+smoothed = TRUE,
+# arguments for ci
+ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+# arguments for plot
+plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+print.auc=TRUE, show.thres=TRUE)
 ```
 
 From this we see the most powerful negative predictors of shot success are `SHOT_DIST` and `TOUCH_TIME`, and the most powerful positive predictors are `SHOT_CLOCK` and `CLOSE_DEF_DIST`.
 
 
-## Third subsection {#sec::Subsec2.3}
+## Comparison of models using shot type and superstar status {#sec::Subsec2.3}
 
-TODO: EXPLANATION HERE, BETTER PLOT TITLE AND DECIDE ON CAPTION ETC
+In order to gain further insights about shot success, we fit multiple models on different subsets of players. Specifically we fit a model for point type (2 or 3 point shots) and then by "superstar" status. In this case, we take superstars to be the most prolific 2 and 3 point scorer for each team. We see that the superstars account for roughly half of all the 3 pointer shots, but only $\approx 26\%$ for 2 point shots. This shows that overall each team relies heavily on one or two shooters from the three-point line. The plot of model coefficients with associated confidence intervals is shown below:
 
 ```{r data setup for split shot models, include=FALSE}
-superstars = c("Steph Curry", "Anthony Davis", "Lebron James", "James Harden", "Russel Westbrook", "Kyrie Irving",
-              "Demarcus Cousins", "Klay Thompson", "Dwayne Wade", "Damian Lillard") # This is arbitrary, so this is just a few good players.
+#superstars = c("Steph Curry", "Anthony Davis", "Lebron James", "James Harden", "Russel Westbrook", "Kyrie Irving",
+#              "Demarcus Cousins", "Klay Thompson", "Dwayne Wade", "Damian Lillard") # This is arbitrary, so this is just a few good players.
 
-model_data_2pt <- model_data_scaled %>% filter(PTS_TYPE == 2 & !PLAYER_NAME %in% superstars)
-model_data_3pt <- model_data_scaled %>% filter(PTS_TYPE == 3 & !PLAYER_NAME %in% superstars)
-model_data_super <- model_data_scaled %>% filter(PLAYER_NAME %in% superstars)
-model_data_super_2pt <- model_data_super %>% filter(PTS_TYPE == 2)
-model_data_super_3pt <- model_data_super %>% filter(PTS_TYPE == 3)
+super_3pt <- clean_shots %>% filter(PTS_TYPE == 3) %>% 
+    group_by(PLAYER_NAME) %>% 
+    summarise(shots_in = sum(SUCCESS==1)) %>%
+    left_join(player_info %>% select(PLAYER_NAME, Team), by="PLAYER_NAME") %>%
+    group_by(Team) %>%
+    slice_max(order_by = shots_in, n=1) %>%
+    arrange(desc(shots_in)) %>%
+    pull(PLAYER_NAME)
+super_2pt <- clean_shots %>% filter(PTS_TYPE == 2) %>% 
+    group_by(PLAYER_NAME) %>% 
+    summarise(shots_in = sum(SUCCESS==1)) %>%
+    left_join(player_info %>% select(PLAYER_NAME, Team), by="PLAYER_NAME") %>%
+    group_by(Team) %>%
+    slice_max(order_by = shots_in, n=1) %>%
+    arrange(desc(shots_in)) %>%
+    pull(PLAYER_NAME)
+
+
+
+model_data_2pt <- model_data_scaled %>% filter(PTS_TYPE == 2 & !PLAYER_NAME %in% super_2pt & !PLAYER_NAME %in% super_3pt)
+model_data_3pt <- model_data_scaled %>% filter(PTS_TYPE == 3 & !PLAYER_NAME %in% super_2pt & !PLAYER_NAME %in% super_3pt)
+model_data_super_2pt <- model_data_scaled %>% filter(PLAYER_NAME %in% super_2pt)
+model_data_super_3pt <- model_data_scaled %>% filter(PLAYER_NAME %in% super_3pt)
 
 # Repetitive but only to make sure the models are correct. A more concise syntax can be used if I filtered the data to only have the predictor cols.
 
@@ -327,10 +340,11 @@ p.caption {
 }
 </style>
 
-```{r split-model-dot-whisker-plot, include=TRUE, fig.cap="THIS IS A BOOKDOWN CAPTION"}
+```{r split-model-dot-whisker-plot, include=TRUE, out.width='100%'}
 #| echo=FALSE,
 #| fig.width=12, 
-#| fig.height=6
+#| fig.height=8,
+#| fig.cap="Plot of model coefficients for shot type and superstars vs. other players. Lines around the points show Wald confidence intervals."
 coefs_plot <- bind_rows(
     tidy(log_model_2pt)   %>% mutate(model = glue("2PT, n={nrow(model_data_2pt)}")),
     tidy(log_model_3pt)   %>% mutate(model = glue("3PT, n={nrow(model_data_3pt)}")),
@@ -357,21 +371,20 @@ ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
     labels = c(`FALSE` = "Not significant", `TRUE` = "Significant")
   ) +
   labs(
-    title  = "Model Coefficients",
+    title  = "Model Coefficients by shot type and superstar status",
     x      = "Coefficient estimate",
     y      = NULL,
     colour = "Model",
     shape  = "Significance",
-    caption = "THIS IS A CENTRED GGPLOT2 CAPTION"
     
   ) +
-  theme_light(base_size = 11) +
+  theme_light(base_size = 12) +
   theme(
     panel.grid.major.y = element_blank(),
-    legend.position    = "bottom",
-    plot.caption = element_text(hjust = 0.5, face = "italic", size = 9)
+    legend.position    = "bottom"
   ) +
      guides(color = guide_legend(nrow = 2))
 
 ```
-More text below
+
+Looking at the coefficients for `SHOT_DIST` we can see firstly that distance doesn't affect superstar players as much as other players. Secondly, the effect on those other players is much more varied from the visibly larger confidence interval.
