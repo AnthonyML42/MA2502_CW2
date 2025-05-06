@@ -5,28 +5,23 @@ author: "| Obi-Wan Kenobi (C1234567) and Luke Skywalker (C2345678)\n| More names
 fontsize: 11pt
 output:
   bookdown::pdf_document2:
+
     toc: true
     number_sections: true
-    keep_tex: true
+    #keep_tex: true 
     citation_package: natbib
     fig_caption: true
-    highlight: haddock
+    
+    #toc_depth: 1
+
+    highlight: haddock 
     df_print: kable
     extra_dependencies:
-      caption: labelfont={bf}
-  bookdown::html_document2:
-    toc: true
-    number_sections: true
-    keep_tex: true
-    citation_package: natbib
-    fig_caption: true
-    highlight: haddock
-    df_print: kable
-  html_document:
-    toc: true
-    df_print: paged
-  pdf_document:
-    toc: true
+      caption: ["labelfont={bf}"]
+    pdf_document:
+      extra_dependencies: ["flafter"]
+    pdf_document2:
+      extra_dependencies: ["float"]
 geometry: margin=1in
 fontfamily: times
 abstract: Write your abstract here.
@@ -46,7 +41,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 In the first R cell below, you should load all the packages and data sets used to generate the report. 
 -->
 
-```{r libraries and data import, include=FALSE}
+```{r libraries-and-data-import, include=FALSE}
 ## Packages
 library(tidyverse)
 library(stringi)
@@ -55,8 +50,6 @@ library(matrixStats)
 library(glmnet)
 library(broom)
 library(glue)
-#library(stargazer)
-library(texreg)
 
 ## Data
 player_info <- read_csv("Data/Player_Info.csv")
@@ -70,7 +63,7 @@ height_2014 <- read_csv("Data/NBA-Height-Weight/CSVs/Yearly/2014.csv") #https://
 height_2014 <- height_2014 %>% rename(PLAYER_NAME = Name)
 ```
 
-```{r data name cleaning, include=FALSE}
+```{r data-name-cleaning, include=FALSE}
 # Data cleaning for consistency across datasets
 
 typos <- c(
@@ -134,15 +127,15 @@ player_info <- player_info %>% mutate(across(where(is.character), ~ str_replace_
 
 Lorem ipsum dolor sit amet. In rerum labore et quasi nobis est error quia eos numquam quod aut quaerat officia vel accusamus perspiciatis et labore quas. In atque delectus qui illo aliquid ut labore perferendis! 
 
-# Predictors of shot success {#sec:Sec1}
+# Predictors of shot success {#sec:predict-shot-success}
 
 In this section we investigate the relationship between variables in the dataset and shot success. Fitting logistic models to the data allows us to see the weightings of each predictor, check if their effect is significant and compare how they affect the log-odds of shot success. We will fit the first models on a training subset of the data, and then evaluate their predictive performance on a testing subset. Rather than strictly to analyse predictive performance, these metrics will show that shot success cannot fully be explained by the data we have - there are many more factors and basketball is a complex game!
 
-## Naive logistic regression {#sec::Subsec1.1}
+## Naive logistic regression {#sec::naive-logistic-regression}
 
-First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors listed in the call section below, along with a summary of the coefficient weights:
+First we choose predictors from the data based on intuitive information about basketball. Our first logistic model predicts `SUCCESS` by the predictors listed in the leftmost column in Table \@ref(tab:naive-log-model-fit-and-summary) below, along with a summary of the coefficient weights:
 
-```{r height conversion function, include=FALSE}
+```{r height-conversion-function, include=FALSE}
 # Heights like 6-4 are very annoying, convert them to cm here!
 
 convert_to_cm <- function(feet_inches) {
@@ -158,7 +151,7 @@ convert_to_cm <- function(feet_inches) {
 convert_to_cm <- Vectorize(convert_to_cm)
 ```
 
-```{r height data joining and model data splitting, include=FALSE}
+```{r height-data-joining-and-mode-data-splitting, include=FALSE}
 
 predictors <- c("GAME_ID", "PLAYER_NAME", "CLOSEST_DEFENDER" ,"SHOT_DIST", "PTS_TYPE",
                 "CLOSE_DEF_DIST", "SHOT_CLOCK", "TOUCH_TIME", "PERIOD", "DRIBBLES", "LOCATION", "SUCCESS")
@@ -225,16 +218,20 @@ train_data <- model_data_scaled[train_indices, ]
 test_data <- model_data_scaled[-train_indices, ]
 ```
 
-```{r naive log model fit and summary, include=TRUE, echo=FALSE}
+```{r naive-log-model-fit-and-summary, echo=FALSE}
 log_model <- glm(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES,  
                  data=train_data, family=binomial(link="logit"))
-
-summary(log_model)
+summary_coefs <- summary(log_model)$coefficients
+intercept_val <- round(summary_coefs["(Intercept)","Estimate"],3)
+summary_coefs %>% kable(booktabs=TRUE, digits=3, caption="Logistic regression coefficients, errors and significance")
 ```
 
 (Note that `PERIOD1` and some other variables are not present in the coefficient summary. This is because R considers the first factor in categorical data as a base, and then compares the others to it.)
 
-From the coefficients table we can see weights (Estimate column) and whether the effect is significant or not (`Pr(>|z|)` column). In this model the period is not a significant predictor of shot success. On the other hand, shot distance is the largest predictor for decreasing shot success and the weight ($-0.55$) is somewhat larger than that of the other predictors.
+As a sanity check, the shot success with no additional information can be calculated from the `(Intercept)` term  by solving $\log\!\bigl(\frac{p}{1-p}\bigr)
+    =`r intercept_val` \implies p\approx`r round(exp(intercept_val)/(exp(intercept_val)+1), 3)`$ which is consistent with the empirical success rate from the dataset of $\approx `r clean_shots %>% summarise(shot_success = round(sum(SUCCESS==1)/n(), 3)) %>% pull(shot_success)`$.
+
+From the coefficients table we can see weights (`Estimate` column) and whether the effect is significant or not (`Pr(>|z|)` column). In this model the period is not a significant predictor of shot success. On the other hand, shot distance is the largest predictor for decreasing shot success and the weight ($-0.55$) is somewhat larger than that of the other predictors.
 
 One conclusion which is initially confusing is the positive weight of `CLOSE_DEF_DIST`, seemingly implying that a defender being closer makes a successful shot more likely. However when defenders are closest is usually when a layup is made near the net, which isn't necessarily harder than a wide-open 3 pointer. We will try to address this by splitting the models up by shot type later.
 
@@ -242,11 +239,11 @@ The remaining predictors have expected weight signs. The weight for `SHOOTER_HEI
 
 Looking at the dataset columns and the predictors, we decided to exclude `PTS_TYPE` and `LOCATION` (home or away) because subsequent analysis will be dedicated to these factors.
 
-## Regularised logistic regression {#sec::Subsec2.2}
+## Regularised logistic regression {#sec::regularised_regression}
 
-Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation (specifically the penalty term $\lambda\sum_{i=1}^n{|\beta_{i}|}$) to regression models, which can shrink the coefficients of less powerful predictors to zero - hence the name lasso regression. For this model we have computed the **AUROC** (Area Under Receiver Operating Characteristic curve) which is a measure of how accurately the model can predict a successful shot. This metric is useful because a random classifier has an AUROC of $0.5$ which serves as a baseline. We see our AUROC is only $\approx0.6$, so only slightly better than random predictions! This low value further suggests that the data we have cannot explain the whole story behind shot success, there are so many more factors at play. We include the full ROC curve in the appendix also (link).
+Next we ask if these weights can truly be used in isolation to determine important factors relating to shot success? Refitting this model with a different set of predictors will yield different weights, possibly throwing our conclusions into question. We can add $\ell^1$ regularisation (specifically the penalty term $\lambda\sum_{i=1}^n{|\beta_{i}|}$, where $\beta_i$ are the predictors and $\lambda$ is a tunable hyperparameter) to regression models, which can shrink the coefficients of less powerful predictors to zero - hence the name lasso regression. We show the model coefficients in Table \@ref(tab:lasso-model-summary). For this model, we have computed the **AUROC** (Area Under Receiver Operating Characteristic curve) which is a measure of how accurately the model can predict a successful shot. This metric is useful because a random classifier has an AUROC of $0.5$ which serves as a baseline. We see our AUROC is only $\approx0.6$, so only slightly better than random predictions! This low value further suggests that the data we have cannot explain the whole story behind shot success, there are so many more factors at play. We include the full ROC curve in the appendix (\@ref(fig:roc-curve-appendix)).
 
-```{r log lasso model fitting and roc, include=FALSE}
+```{r log-lasso-model-fitting-and-auroc, include=FALSE}
 x_train <- model.matrix(SUCCESS ~ SHOT_DIST + CLOSE_DEF_DIST + TOUCH_TIME + 
                         SHOOTER_HEIGHT_ADV + PERIOD + SHOT_CLOCK + DRIBBLES + PTS_TYPE + LOCATION, data = train_data)[, -1]
 y_train <- train_data$SUCCESS
@@ -259,41 +256,35 @@ lambda_opt <- 0.01828452 # hardcoded 10x CV lambda.1se precomputed (long compile
 log_lasso_model <- glmnet(x_train, y_train, family = "binomial", alpha=1, lambda=lambda_opt, standardize=FALSE) 
 
 pred_probs <- predict(log_lasso_model, newx = x_test, type = "response", s = lambda_opt)
-roc_obj <- roc(y_test, as.vector(pred_probs))
+roc_obj <- roc(y_test, as.vector(pred_probs), ci=TRUE, conf.level=0.95)
 ci_auc <- round(ci.auc(roc_obj), 3)
-auc_ci_result <- glue("{round(auc(roc_obj), 3)} [{ci_auc[1]}-{ci_auc[3]}]")
+auroc_ci_result <- glue("{round(auc(roc_obj), 3)} [{ci_auc[1]}-{ci_auc[3]}]")
 ```
 
-```{r lasso model summary, include=TRUE, echo=FALSE, fig.cap="AAAAAAAAAAAAAAAAAAA"}
+```{r lasso-model-summary, include=TRUE, echo=FALSE}
 # Model coefficients
-log_lasso_model$beta
+log_lasso_model$beta %>%
+    as.matrix() %>%
+    as.data.frame() %>%
+    rownames_to_column("Variable") %>%
+    setNames(c("Variable", "Coefficient")) %>%
+    filter(Coefficient != 0) %>%
+    kable(booktabs = TRUE, digits=3, caption="Non-zero Lasso Regression Coefficients")
 ```
 
 ```{r lasso model auroc, include=TRUE}
-# AUROC of the log lasso model and CI
-auc_ci_result
+# AUROC of the log lasso model and 95% CI
+auroc_ci_result
 ```
 
-(SEND ROC CURVE TO APPENDIX)
-
-```{r roc-curve-appendix, include=TRUE, echo=FALSE}
-roc(y_test, as.vector(pred_probs),
-smoothed = TRUE,
-# arguments for ci
-ci=TRUE, ci.alpha=0.9, stratified=FALSE,
-# arguments for plot
-plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
-print.auc=TRUE, show.thres=TRUE)
-```
-
-From this we see the most powerful negative predictors of shot success are `SHOT_DIST` and `TOUCH_TIME`, and the most powerful positive predictors are `SHOT_CLOCK` and `CLOSE_DEF_DIST`.
+From Table \@ref(tab:lasso-model-summary) we see the most powerful negative predictors of shot success are `SHOT_DIST` and `TOUCH_TIME`, and the most powerful positive predictors are `SHOT_CLOCK` and `CLOSE_DEF_DIST`. If a coefficient's weight is not listed, it is zero due to the regularisation.
 
 
-## Comparison of models using shot type and superstar status {#sec::Subsec2.3}
+## Comparison of models using shot type and superstar status {#sec::shot-type-superstar-split-model}
 
-In order to gain further insights about shot success, we fit multiple models on different subsets of players. Specifically we fit a model for point type (2 or 3 point shots) and then by "superstar" status. In this case, we take superstars to be the most prolific 2 and 3 point scorer for each team. We see that the superstars account for roughly half of all the 3 pointer shots, but only $\approx 26\%$ for 2 point shots. This shows that overall each team relies heavily on one or two shooters from the three-point line. The plot of model coefficients with associated confidence intervals is shown below:
+In order to gain further insights about shot success, we fit multiple models on different subsets of players. Specifically we fit a model for point type (2 or 3 point shots) and then by "superstar" status. In this case, we take superstars to be the most prolific 2 and 3 point scorer for each team. We see that the superstars account for roughly half of all the 3 pointer shots, but only $\approx 26\%$ for 2 point shots. This shows that overall each team relies heavily on one or two shooters from the three-point line, but not for other shots. The plot of model coefficients with associated confidence intervals is shown on Figure \@ref(fig:split-model-dot-whisker-plot).
 
-```{r data setup for split shot models, include=FALSE}
+```{r data-setup-for-split-shot-models, include=FALSE}
 #superstars = c("Steph Curry", "Anthony Davis", "Lebron James", "James Harden", "Russel Westbrook", "Kyrie Irving",
 #              "Demarcus Cousins", "Klay Thompson", "Dwayne Wade", "Damian Lillard") # This is arbitrary, so this is just a few good players.
 
@@ -340,11 +331,12 @@ p.caption {
 }
 </style>
 
-```{r split-model-dot-whisker-plot, include=TRUE, out.width='100%'}
+```{r split-model-dot-whisker-plot}
 #| echo=FALSE,
 #| fig.width=12, 
 #| fig.height=8,
-#| fig.cap="Plot of model coefficients for shot type and superstars vs. other players. Lines around the points show Wald confidence intervals."
+#| fig.cap="Plot of model coefficients for shot type and superstars vs. other players. Lines around the points show Wald confidence intervals.",
+#| fig.pos="H"
 coefs_plot <- bind_rows(
     tidy(log_model_2pt)   %>% mutate(model = glue("2PT, n={nrow(model_data_2pt)}")),
     tidy(log_model_3pt)   %>% mutate(model = glue("3PT, n={nrow(model_data_3pt)}")),
@@ -362,16 +354,16 @@ ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
   geom_errorbarh(aes(xmin = lower, xmax = upper),
                  height = 0.2,
-                 linewidth = 0.5,
+                 linewidth = 1,
                  position = position_dodge(width = 0.7)) +
-  geom_point(position = position_dodge(width = 0.7), size = 2) +
+  geom_point(position = position_dodge(width = 0.7), size = 3) +
   scale_color_brewer(palette = "Dark2") +
   scale_shape_manual(
     values = c(`FALSE` = 1, `TRUE` = 16),
     labels = c(`FALSE` = "Not significant", `TRUE` = "Significant")
   ) +
   labs(
-    title  = "Model Coefficients by shot type and superstar status",
+    title  = "Model Coefficients by Shot Type and Superstar Status",
     x      = "Coefficient estimate",
     y      = NULL,
     colour = "Model",
@@ -387,4 +379,17 @@ ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
 
 ```
 
-Looking at the coefficients for `SHOT_DIST` we can see firstly that distance doesn't affect superstar players as much as other players. Secondly, the effect on those other players is much more varied from the visibly larger confidence interval.
+Looking at the coefficients for `SHOT_DIST` we can see firstly that distance doesn't affect superstar players as much as other players. Secondly, the effect on those other players is much more varied from the visibly larger confidence interval for three-point shots. Also superstar shots from the three-point line are less affected by defender pressure than other three-point shots from the `CLOSE_DEF_DIST` estimates. 
+
+# Appendix {#sec:appendix}
+
+```{r roc-curve-appendix, include=TRUE, echo=FALSE, fig.cap="Smoothed ROC curve for the log lasso model with 95% CI"}
+invisible(roc(y_test, as.vector(pred_probs),
+smoothed = TRUE,
+# arguments for ci
+ci=TRUE, conf.level=0.95,
+# arguments for plot
+plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+print.auc=TRUE, show.thres=TRUE, quiet=TRUE))
+```
+
