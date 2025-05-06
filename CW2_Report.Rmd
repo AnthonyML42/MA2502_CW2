@@ -272,7 +272,7 @@ log_lasso_model$beta %>%
     kable(booktabs = TRUE, digits=3, caption="Non-zero Lasso Regression Coefficients")
 ```
 
-```{r lasso model auroc, include=TRUE}
+```{r lasso-model-auroc, include=TRUE}
 # AUROC of the log lasso model and 95% CI
 auroc_ci_result
 ```
@@ -334,7 +334,7 @@ p.caption {
 ```{r split-model-dot-whisker-plot}
 #| echo=FALSE,
 #| fig.width=12, 
-#| fig.height=8,
+#| fig.height=6,
 #| fig.cap="Plot of model coefficients for shot type and superstars vs. other players. Lines around the points show Wald confidence intervals.",
 #| fig.pos="H"
 coefs_plot <- bind_rows(
@@ -383,13 +383,16 @@ Looking at the coefficients for `SHOT_DIST` we can see firstly that distance doe
 
 # Appendix {#sec:appendix}
 
-```{r roc-curve-appendix, include=TRUE, echo=FALSE, fig.cap="Smoothed ROC curve for the log lasso model with 95% CI"}
+```{r roc-curve-appendix, include=TRUE, echo=FALSE}
+#| fig.cap="Smoothed ROC curve for the log lasso model with 95% CI",
+#| fig.width=4,
+#| fig.height=4
 invisible(roc(y_test, as.vector(pred_probs),
 smoothed = TRUE,
 # arguments for ci
 ci=TRUE, conf.level=0.95,
 # arguments for plot
 plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
-print.auc=TRUE, show.thres=TRUE, quiet=TRUE))
+print.auc=TRUE, show.thres=TRUE, quiet=TRUE, print.auc.cex   = 0.6))
 ```
 
