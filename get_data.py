@@ -1,7 +1,6 @@
 import requests
 import os
 import subprocess
-import gdown
 import sys
 import platform
 from pathlib import Path

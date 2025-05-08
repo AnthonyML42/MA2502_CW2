@@ -335,7 +335,7 @@ p.caption {
 #| echo=FALSE,
 #| fig.width=12, 
 #| fig.height=6,
-#| fig.cap="Plot of model coefficients for shot type and superstars vs. other players. Lines around the points show Wald confidence intervals.",
+#| fig.cap="Plot of model coefficients for shot type and superstars vs. other players. Lines around the points show Wald confidence intervals. The black box shows `SHOT_DIST` coefficients which is the main result of the analysis.",
 #| fig.pos="H"
 coefs_plot <- bind_rows(
     tidy(log_model_2pt)   %>% mutate(model = glue("2PT, n={nrow(model_data_2pt)}")),
@@ -350,6 +350,10 @@ coefs_plot <- bind_rows(
     upper = estimate + 1.96 * std.error,
     sig   = p.value <= 0.05
   )
+coefs_plot$term <- factor(coefs_plot$term, levels = rev(unique(coefs_plot$term)))
+yshot <- which(levels(coefs_plot$term) == "SHOT_DIST")
+offset <- 0.05
+
 ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
   geom_errorbarh(aes(xmin = lower, xmax = upper),
@@ -362,6 +366,11 @@ ggplot(coefs_plot, aes(x = estimate, y = term, colour = model, shape = sig)) +
     values = c(`FALSE` = 1, `TRUE` = 16),
     labels = c(`FALSE` = "Not significant", `TRUE` = "Significant")
   ) +
+    annotate("rect",
+         xmin = min(coefs_plot$lower[coefs_plot$term=="SHOT_DIST"]) - offset,
+         xmax = max(coefs_plot$upper[coefs_plot$term=="SHOT_DIST"]) + offset,
+         ymin = yshot - .5, ymax = yshot + .5, # this was easier than I thought, maybe the .5 should depend on the dodge value in the future
+         fill = NA, col = "black", size = 1) +
   labs(
     title  = "Model Coefficients by Shot Type and Superstar Status",
     x      = "Coefficient estimate",
